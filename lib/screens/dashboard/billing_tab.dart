@@ -17,23 +17,6 @@ class BillingTab extends StatefulWidget {
 }
 
 class _BillingTabState extends State<BillingTab> {
-  Timer? _timer;
-
-  @override
-  void initState() {
-    super.initState();
-    // Refresh timer setiap detik untuk update tampilan waktu
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {});
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
   Future<void> _refresh() async {
     await Future.wait([
       context.read<UnitProvider>().fetchUnits(),
@@ -58,8 +41,8 @@ class _BillingTabState extends State<BillingTab> {
             child: _SummaryBar(units: units, sessions: sessions),
           ),
 
-          // Unit grid
-          if (isLoading)
+          // Unit grid — spinner penuh hanya saat belum ada data, agar refresh tidak berkedip
+          if (isLoading && units.isEmpty)
             const SliverFillRemaining(
               child: Center(child: CircularProgressIndicator(color: AppTheme.primary)),
             )
@@ -130,11 +113,13 @@ class _SummaryBar extends StatelessWidget {
             const SizedBox(width: 12),
             _SummaryChip(label: 'Maintenance', value: '$maintenance', color: AppTheme.warning),
             const SizedBox(width: 24),
-            Text(
-              DateFormat('HH:mm').format(DateTime.now()),
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: AppTheme.textSecondary,
-                fontFeatures: [const FontFeature.tabularFigures()],
+            _EverySecond(
+              builder: (context) => Text(
+                DateFormat('HH:mm').format(DateTime.now()),
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: AppTheme.textSecondary,
+                  fontFeatures: [const FontFeature.tabularFigures()],
+                ),
               ),
             ),
           ],
@@ -142,6 +127,39 @@ class _SummaryBar extends StatelessWidget {
       ),
     );
   }
+}
+
+// ─── Ticker ─────────────────────────────────────────────────
+
+/// Membangun ulang hanya bagian [builder] setiap detik, sehingga tampilan
+/// waktu berjalan tanpa menggambar ulang seluruh grid.
+class _EverySecond extends StatefulWidget {
+  final WidgetBuilder builder;
+  const _EverySecond({required this.builder});
+
+  @override
+  State<_EverySecond> createState() => _EverySecondState();
+}
+
+class _EverySecondState extends State<_EverySecond> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context);
 }
 
 class _SummaryChip extends StatelessWidget {
@@ -173,7 +191,10 @@ class _UnitCard extends StatelessWidget {
   final SessionModel? session;
   const _UnitCard({required this.unit, this.session});
 
+  bool get _isExpired => session?.isExpired ?? false;
+
   Color get _statusColor {
+    if (session != null) return _isExpired ? AppTheme.danger : AppTheme.success;
     if (unit.isInUse) return AppTheme.success;
     if (unit.isMaintenance) return AppTheme.warning;
     return AppTheme.textMuted;
@@ -196,21 +217,32 @@ class _UnitCard extends StatelessWidget {
 
   String get _secondaryTimeText {
     if (session == null) return '';
+    if (_isExpired) return 'Tap untuk checkout';
     final timeStr = DateFormat('HH:mm').format(session!.startTime.toLocal());
     return 'Dimulai: $timeStr';
   }
 
   @override
   Widget build(BuildContext context) {
-    final isAlmostOver = session?.isAlmostOver ?? false;
-
     return Card(
       child: InkWell(
         onTap: () => _showUnitDialog(context),
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Column(
+          // Hanya kartu dengan sesi berjalan yang diperbarui tiap detik
+          child: session == null ? _content(context) : _EverySecond(builder: _content),
+        ),
+      ),
+    );
+  }
+
+  Widget _content(BuildContext context) {
+    final timerColor = _isExpired
+        ? AppTheme.danger
+        : (session?.isAlmostOver ?? false) ? AppTheme.warning : AppTheme.success;
+
+    return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Header
@@ -233,7 +265,7 @@ class _UnitCard extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: _statusColor,
                       shape: BoxShape.circle,
-                      boxShadow: unit.isInUse
+                      boxShadow: unit.isInUse || session != null
                           ? [BoxShadow(color: _statusColor.withOpacity(0.5), blurRadius: 6)]
                           : null,
                     ),
@@ -251,22 +283,24 @@ class _UnitCard extends StatelessWidget {
 
               // Status label
               Text(
-                unit.isAvailable ? 'Tersedia' : unit.isInUse ? 'Sedang Bermain' : 'Maintenance',
+                session != null
+                    ? (_isExpired ? 'Waktu Habis' : 'Sedang Bermain')
+                    : unit.isAvailable ? 'Tersedia' : unit.isInUse ? 'Sedang Bermain' : 'Maintenance',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(color: _statusColor),
               ),
 
               const Spacer(),
 
-              if (unit.isInUse && session != null) ...[
+              if (session != null) ...[
                 // Timer
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   decoration: BoxDecoration(
-                    color: (isAlmostOver ? AppTheme.warning : AppTheme.success).withOpacity(0.1),
+                    color: timerColor.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                      color: (isAlmostOver ? AppTheme.warning : AppTheme.success).withOpacity(0.3),
+                      color: timerColor.withOpacity(0.3),
                     ),
                   ),
                   child: Column(
@@ -275,7 +309,7 @@ class _UnitCard extends StatelessWidget {
                         _primaryTimeText,
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          color: isAlmostOver ? AppTheme.warning : AppTheme.success,
+                          color: timerColor,
                           fontSize: 22,
                           fontWeight: FontWeight.w700,
                           fontFeatures: const [FontFeature.tabularFigures()],
@@ -308,14 +342,11 @@ class _UnitCard extends StatelessWidget {
                 ),
               ],
             ],
-          ),
-        ),
-      ),
     );
   }
 
   void _showUnitDialog(BuildContext context) {
-    if (unit.isInUse && session != null) {
+    if (session != null) {
       _showStopDialog(context);
     } else if (unit.isAvailable) {
       _showStartDialog(context);
@@ -365,6 +396,7 @@ class _StartSessionSheetState extends State<StartSessionSheet> {
   String? _selectedPackageId;
   List<PackageModel> _packages = [];
   bool _isLoading = false;
+  bool _isStarting = false;
 
   @override
   void initState() {
@@ -387,19 +419,21 @@ class _StartSessionSheetState extends State<StartSessionSheet> {
   }
 
   Future<void> _start() async {
-    if (_selectedPackageId == null) return;
+    if (_selectedPackageId == null || _isStarting) return;
     final sessionProv = context.read<SessionProvider>();
     final unitProv    = context.read<UnitProvider>();
+    final messenger   = ScaffoldMessenger.of(context);
 
+    setState(() => _isStarting = true);
     final session = await sessionProv.startSession(widget.unit.id, _selectedPackageId!);
     if (!mounted) return;
 
     if (session != null) {
       unitProv.fetchUnits();
       Navigator.pop(context);
-      
+
       if (sessionProv.tuyaWarning != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        messenger.showSnackBar(
           SnackBar(
             content: Text('Sesi dimulai, tapi: ${sessionProv.tuyaWarning}'),
             backgroundColor: AppTheme.warning,
@@ -407,7 +441,7 @@ class _StartSessionSheetState extends State<StartSessionSheet> {
           ),
         );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
+        messenger.showSnackBar(
           SnackBar(
             content: Text('Sesi dimulai untuk ${widget.unit.name}'),
             backgroundColor: AppTheme.success,
@@ -415,8 +449,12 @@ class _StartSessionSheetState extends State<StartSessionSheet> {
         );
       }
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Gagal memulai sesi'), backgroundColor: AppTheme.danger),
+      setState(() => _isStarting = false);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Gagal memulai sesi: ${sessionProv.error ?? "Terjadi kesalahan"}'),
+          backgroundColor: AppTheme.danger,
+        ),
       );
     }
   }
@@ -477,8 +515,13 @@ class _StartSessionSheetState extends State<StartSessionSheet> {
             width: double.infinity,
             height: 52,
             child: ElevatedButton(
-              onPressed: _selectedPackageId != null ? _start : null,
-              child: const Text('Mulai Sesi'),
+              onPressed: _selectedPackageId != null && !_isStarting ? _start : null,
+              child: _isStarting
+                  ? const SizedBox(
+                      width: 20, height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Text('Mulai Sesi'),
             ),
           ),
         ],

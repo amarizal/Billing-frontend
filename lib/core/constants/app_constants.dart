@@ -1,5 +1,3 @@
-import 'package:flutter/foundation.dart';
-
 class AppConstants {
   // ─── API ────────────────────────────────────────────────
   static String baseUrl = 'https://billing-backend-production-7ed4.up.railway.app/api';
@@ -10,9 +8,6 @@ class AppConstants {
   static const String keyUser = 'user_data';
 
   // ─── Session ─────────────────────────────────────────────
-  // Notifikasi peringatan sebelum sesi habis (menit)
+  // Timer berubah warna peringatan saat sisa waktu di bawah ini (menit)
   static const int sessionWarningMinutes = 5;
-
-  // ─── Pagination ──────────────────────────────────────────
-  static const int defaultPageSize = 50;
 }

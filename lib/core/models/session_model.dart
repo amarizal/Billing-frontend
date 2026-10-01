@@ -1,3 +1,4 @@
+import '../constants/app_constants.dart';
 import 'package_model.dart';
 import 'user_model.dart';
 import 'unit_model.dart';
@@ -56,11 +57,15 @@ class SessionModel {
     return r.isNegative ? Duration.zero : r;
   }
 
-  /// Apakah sesi hampir habis (< 5 menit)
+  /// Apakah sesi hampir habis
   bool get isAlmostOver {
     if (remaining == null) return false;
-    return remaining!.inMinutes < 5;
+    return remaining!.inMinutes < AppConstants.sessionWarningMinutes;
   }
+
+  /// Apakah waktu paket sudah habis (menunggu checkout)
+  bool get isExpired =>
+      plannedEndTime != null && !DateTime.now().isBefore(plannedEndTime!);
 
   factory SessionModel.fromJson(Map<String, dynamic> json) {
     return SessionModel(

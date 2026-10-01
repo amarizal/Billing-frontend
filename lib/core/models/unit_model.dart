@@ -7,7 +7,6 @@ class UnitModel {
   final String status; // 'available' | 'in_use' | 'maintenance'
   final int displayOrder;
   final bool isActive;
-  final String? ipAddress;
   final String? tuyaDeviceId;
   final SessionModel? activeSession; // session aktif saat ini (jika ada)
 
@@ -18,7 +17,6 @@ class UnitModel {
     required this.status,
     required this.displayOrder,
     required this.isActive,
-    this.ipAddress,
     this.tuyaDeviceId,
     this.activeSession,
   });
@@ -37,7 +35,6 @@ class UnitModel {
       status:       json['status'] as String? ?? 'available',
       displayOrder: json['displayOrder'] as int? ?? 0,
       isActive:     json['isActive'] ?? json['is_active'] as bool? ?? true,
-      ipAddress:    json['ipAddress'] ?? json['ip_address'] as String?,
       tuyaDeviceId: json['tuyaDeviceId'] ?? json['tuya_device_id'] as String?,
       activeSession: (sessions != null && sessions.isNotEmpty)
           ? SessionModel.fromJson(sessions.first as Map<String, dynamic>)

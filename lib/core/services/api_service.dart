@@ -9,13 +9,18 @@ class ApiService {
   void Function()? onForceLogout;
   void Function(String accessToken, String refreshToken)? onTokenRefreshed;
 
+  late final Dio _plainDio;
+  Future<bool>? _refreshing;
+
   ApiService() {
-    _dio = Dio(BaseOptions(
+    final options = BaseOptions(
       baseUrl: AppConstants.baseUrl,
       connectTimeout: const Duration(seconds: 30),
       receiveTimeout: const Duration(seconds: 30),
       headers: {'Content-Type': 'application/json'},
-    ));
+    );
+    _dio = Dio(options);
+    _plainDio = Dio(options);
 
     // Request interceptor: inject token
     _dio.interceptors.add(InterceptorsWrapper(
@@ -27,34 +32,47 @@ class ApiService {
       },
       onError: (DioException error, handler) async {
         if (error.response?.statusCode == 401 && _refreshToken != null) {
-          try {
-            // Gunakan instance Dio baru agar tidak terkena interceptor yang sama
-            final refreshDio = Dio(BaseOptions(baseUrl: AppConstants.baseUrl));
-            final res = await refreshDio.post('/auth/refresh', data: {'refreshToken': _refreshToken});
-            
-            if (res.statusCode == 200 || res.statusCode == 201) {
-              final data = res.data['data'] as Map<String, dynamic>;
-              final newAccess = data['accessToken'] as String;
-              final newRefresh = data['refreshToken'] as String;
-              
-              _accessToken = newAccess;
-              _refreshToken = newRefresh;
-              onTokenRefreshed?.call(newAccess, newRefresh);
-              
-              // Retry request asli yang gagal
+          // Satu proses refresh dipakai bersama oleh semua request yang gagal bersamaan
+          final refreshed = await (_refreshing ??=
+              _refreshTokens().whenComplete(() => _refreshing = null));
+
+          if (refreshed) {
+            try {
+              // Retry request asli lewat Dio tanpa interceptor agar tidak berulang
               final opts = error.requestOptions;
               opts.headers['Authorization'] = 'Bearer $_accessToken';
-              final retryRes = await refreshDio.fetch(opts);
+              final retryRes = await _plainDio.fetch(opts);
               return handler.resolve(retryRes);
+            } on DioException catch (retryError) {
+              return handler.next(retryError);
             }
-          } catch (e) {
-            // Jika refresh gagal, trigger force logout
-            onForceLogout?.call();
           }
         }
         handler.next(error);
       },
     ));
+  }
+
+  /// Tukar refresh token dengan token baru. Force logout hanya jika server
+  /// menolak tokennya; gangguan jaringan tidak mengeluarkan kasir.
+  Future<bool> _refreshTokens() async {
+    try {
+      final res = await _plainDio.post('/auth/refresh', data: {'refreshToken': _refreshToken});
+      final data = res.data['data'] as Map<String, dynamic>;
+      final newAccess = data['accessToken'] as String;
+      final newRefresh = data['refreshToken'] as String;
+
+      _accessToken = newAccess;
+      _refreshToken = newRefresh;
+      onTokenRefreshed?.call(newAccess, newRefresh);
+      return true;
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      if (status == 400 || status == 401) onForceLogout?.call();
+      return false;
+    } catch (_) {
+      return false;
+    }
   }
 
   void setTokens(String accessToken, String refreshToken) {
@@ -70,11 +88,6 @@ class ApiService {
   // ─── Auth ─────────────────────────────────────────────────
   Future<Map<String, dynamic>> login(String username, String password) async {
     final res = await _dio.post('/auth/login', data: {'username': username, 'password': password});
-    return res.data as Map<String, dynamic>;
-  }
-
-  Future<Map<String, dynamic>> refreshToken(String refreshToken) async {
-    final res = await _dio.post('/auth/refresh', data: {'refreshToken': refreshToken});
     return res.data as Map<String, dynamic>;
   }
 
@@ -149,11 +162,6 @@ class ApiService {
     return res.data as Map<String, dynamic>;
   }
 
-  Future<Map<String, dynamic>> getSession(String sessionId) async {
-    final res = await _dio.get('/sessions/$sessionId');
-    return res.data as Map<String, dynamic>;
-  }
-
   // ─── POS ──────────────────────────────────────────────────
   Future<Map<String, dynamic>> getPosCategories() async {
     final res = await _dio.get('/pos/categories');
@@ -167,12 +175,6 @@ class ApiService {
 
   Future<Map<String, dynamic>> updatePosCategory(String id, Map<String, dynamic> data) async {
     final res = await _dio.put('/pos/categories/$id', data: data);
-    return res.data as Map<String, dynamic>;
-  }
-
-  Future<Map<String, dynamic>> getPosItems({String? categoryId}) async {
-    final res = await _dio.get('/pos/items',
-        queryParameters: categoryId != null ? {'categoryId': categoryId} : null);
     return res.data as Map<String, dynamic>;
   }
 
@@ -203,11 +205,6 @@ class ApiService {
 
   Future<Map<String, dynamic>> getReceipt(String id) async {
     final res = await _dio.get('/receipts/$id');
-    return res.data as Map<String, dynamic>;
-  }
-
-  Future<Map<String, dynamic>> markReceiptPrinted(String id) async {
-    final res = await _dio.patch('/receipts/$id/print');
     return res.data as Map<String, dynamic>;
   }
 

@@ -171,7 +171,6 @@ class _UnitFormDialog extends StatefulWidget {
 class _UnitFormDialogState extends State<_UnitFormDialog> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameController;
-  late TextEditingController _ipAddressController;
   late TextEditingController _tuyaDeviceIdController;
   String _type = 'PS4';
   int _displayOrder = 0;
@@ -181,7 +180,6 @@ class _UnitFormDialogState extends State<_UnitFormDialog> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.unit?.name ?? '');
-    _ipAddressController = TextEditingController(text: widget.unit?.ipAddress ?? '');
     _tuyaDeviceIdController = TextEditingController(text: widget.unit?.tuyaDeviceId ?? '');
     if (widget.unit != null) {
       _type = widget.unit!.type;
@@ -192,7 +190,6 @@ class _UnitFormDialogState extends State<_UnitFormDialog> {
   @override
   void dispose() {
     _nameController.dispose();
-    _ipAddressController.dispose();
     _tuyaDeviceIdController.dispose();
     super.dispose();
   }
@@ -206,7 +203,6 @@ class _UnitFormDialogState extends State<_UnitFormDialog> {
       'name': _nameController.text,
       'type': _type,
       'displayOrder': _displayOrder,
-      'ipAddress': _ipAddressController.text.trim(),
       'tuyaDeviceId': _tuyaDeviceIdController.text.trim(),
     };
 
@@ -254,20 +250,6 @@ class _UnitFormDialogState extends State<_UnitFormDialog> {
                     borderSide: BorderSide(color: AppTheme.primary)),
               ),
               validator: (v) => v!.isEmpty ? 'Nama wajib diisi' : null,
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _ipAddressController,
-              style: const TextStyle(color: AppTheme.textPrimary),
-              decoration: const InputDecoration(
-                labelText: 'IP Address TV Lokal (Opsional)',
-                labelStyle: TextStyle(color: AppTheme.textSecondary),
-                enabledBorder: UnderlineInputBorder(
-                    borderSide: BorderSide(color: AppTheme.textMuted)),
-                focusedBorder: UnderlineInputBorder(
-                    borderSide: BorderSide(color: AppTheme.primary)),
-              ),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
             ),
             const SizedBox(height: 16),
             TextFormField(
